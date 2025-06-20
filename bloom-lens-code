@@ -1,14 +1,24 @@
 // Flower Drop Script (no tween version)
-// @input SceneObject flower
+// @input SceneObject flower1
+// @input SceneObject flower2
+// @input SceneObject flower3
+// @input SceneObject flower4
 // @input Component.Text successText
 // @input Component.Text failText
 // @input Component.Image retryButton
 
-var flowerObj = script.flower;
+var flowerObjects = [script.flower1, script.flower2, script.flower3, script.flower4];
+var currentFlowerObj = null;
 var isDropping = false;
 var stopped = false;
 var gameOver = false;
 var failed = false; // Track if the game failed (to show retry option)
+
+// Game progression
+var currentFlower = 1; // Current flower number (1-4)
+var totalFlowers = 4; // Total number of flowers
+var baseSwingSpeed = 0.25; // Base swing speed
+var speedIncrement = 0.15; // Speed increase per flower
 
 // Movement settings
 var dropSpeed = 10;
@@ -18,13 +28,32 @@ var groundY = -200;
 var pivotY = -1500; // Y position of the pivot point (much further down, ~2.7x lower than -150)
 var armLength = 1480; // Distance from pivot to flower center (increased to compensate for much lower pivot)
 var maxAngle = 5 // Maximum swing angle in degrees (reduced from 15 to 5 for very subtle motion)
-var swingSpeed = 0.25; // Speed of the pendulum swing
+var swingSpeed = baseSwingSpeed; // Will be updated based on current flower
 var currentAngle = -maxAngle; // Start at left side
 var angleDirection = 1; // 1 for clockwise, -1 for counter-clockwise
 
 // Vase detection settings (middle 1/3 of screen)
 var vaseLeftBound = -50; // Approximate left edge of vase (middle 1/3)
 var vaseRightBound = 50; // Approximate right edge of vase (middle 1/3)
+
+// Set current flower object and hide others
+function setCurrentFlower() {
+    currentFlowerObj = flowerObjects[currentFlower - 1];
+    
+    // Hide all flowers first
+    for (var i = 0; i < flowerObjects.length; i++) {
+        if (flowerObjects[i]) {
+            flowerObjects[i].enabled = false;
+        }
+    }
+    
+    // Show only the current flower
+    if (currentFlowerObj) {
+        currentFlowerObj.enabled = true;
+    }
+    
+    print("Switched to flower " + currentFlower);
+}
 
 // Initialize UI elements as hidden
 function initializeUI() {
@@ -33,8 +62,52 @@ function initializeUI() {
     if (script.retryButton) script.retryButton.enabled = false;
 }
 
+// Update swing speed based on current flower
+function updateSwingSpeed() {
+    swingSpeed = baseSwingSpeed + (currentFlower - 1) * speedIncrement;
+    print("Flower " + currentFlower + " - Speed: " + swingSpeed);
+}
+
+// Reset flower position and rotation
+function resetFlowerPosition() {
+    if (!currentFlowerObj) return;
+    
+    var pos = currentFlowerObj.getTransform().getLocalPosition();
+    var angleRad = currentAngle * (Math.PI / 180);
+    pos.x = Math.sin(angleRad) * armLength;
+    pos.y = pivotY + Math.cos(angleRad) * armLength;
+    currentFlowerObj.getTransform().setLocalPosition(pos);
+    
+    // Reset rotation
+    var rotation = currentFlowerObj.getTransform().getLocalRotation();
+    rotation.z = -angleRad;
+    currentFlowerObj.getTransform().setLocalRotation(rotation);
+}
+
 // Reset game to initial state
 function resetGame() {
+    isDropping = false;
+    stopped = false;
+    gameOver = false;
+    failed = false;
+    currentFlower = 1; // Reset to first flower
+    currentAngle = -maxAngle;
+    angleDirection = 1;
+    
+    // Set first flower and update speed
+    setCurrentFlower();
+    updateSwingSpeed();
+    
+    // Reset flower position
+    resetFlowerPosition();
+    
+    // Hide UI elements
+    initializeUI();
+}
+
+// Advance to next flower
+function nextFlower() {
+    currentFlower++;
     isDropping = false;
     stopped = false;
     gameOver = false;
@@ -42,20 +115,14 @@ function resetGame() {
     currentAngle = -maxAngle;
     angleDirection = 1;
     
+    // Switch to next flower and update speed
+    setCurrentFlower();
+    updateSwingSpeed();
+    
     // Reset flower position
-    var pos = flowerObj.getTransform().getLocalPosition();
-    var angleRad = currentAngle * (Math.PI / 180);
-    pos.x = Math.sin(angleRad) * armLength;
-    pos.y = pivotY + Math.cos(angleRad) * armLength;
-    flowerObj.getTransform().setLocalPosition(pos);
+    resetFlowerPosition();
     
-    // Reset rotation
-    var rotation = flowerObj.getTransform().getLocalRotation();
-    rotation.z = -angleRad;
-    flowerObj.getTransform().setLocalRotation(rotation);
-    
-    // Hide UI elements
-    initializeUI();
+    print("Starting flower " + currentFlower + " of " + totalFlowers);
 }
 
 // Check if flower landed in vase
@@ -66,17 +133,33 @@ function checkLanding(flowerX) {
 // Show success feedback
 function showSuccess() {
     if (script.successText) {
-        script.successText.text = "Yayy~";
+        if (currentFlower < totalFlowers) {
+            script.successText.text = "Yayy~ (" + currentFlower + "/" + totalFlowers + ")";
+        } else {
+            script.successText.text = "All Done! 🌸🌸🌸🌸";
+        }
         script.successText.enabled = true;
     }
-    print("🌸 Success! Flower landed in vase!");
+    print("🌸 Success! Flower " + currentFlower + " landed in vase!");
+    
+    // If not the last flower, advance after 2 seconds
+    if (currentFlower < totalFlowers) {
+        var delayedEvent = script.createEvent("DelayedCallbackEvent");
+        delayedEvent.bind(function() {
+            // Hide success message
+            if (script.successText) script.successText.enabled = false;
+            // Advance to next flower
+            nextFlower();
+        });
+        delayedEvent.reset(2.0); // 2 second delay
+    }
 }
 
 // Show failure feedback
 function showFailure() {
     failed = true;
     if (script.failText) {
-        script.failText.text = "Oops :(";
+        script.failText.text = "Oops :( (" + currentFlower + "/" + totalFlowers + ")";
         script.failText.enabled = true;
     }
     if (script.retryButton) {
@@ -86,9 +169,9 @@ function showFailure() {
 }
 
 function onUpdate(eventData) {
-    if (!flowerObj) return;
+    if (!currentFlowerObj) return;
     if (stopped || gameOver) return;
-    var pos = flowerObj.getTransform().getLocalPosition();
+    var pos = currentFlowerObj.getTransform().getLocalPosition();
 
     if (!isDropping) {
         // Update pendulum angle
@@ -110,7 +193,7 @@ function onUpdate(eventData) {
         pos.y = pivotY + Math.cos(angleRad) * armLength;
         
         // Also rotate the flower object to match the pendulum angle
-        var transform = flowerObj.getTransform();
+        var transform = currentFlowerObj.getTransform();
         var rotation = transform.getLocalRotation();
         rotation.z = -angleRad; // Negative to match the visual rotation
         transform.setLocalRotation(rotation);
@@ -133,19 +216,33 @@ function onUpdate(eventData) {
         }
     }
     
-    flowerObj.getTransform().setLocalPosition(pos);
+    currentFlowerObj.getTransform().setLocalPosition(pos);
 }
 
 // Initialize the game
+setCurrentFlower(); // Set first flower
+updateSwingSpeed(); // Set initial speed
 initializeUI();
- 
+
 script.createEvent("UpdateEvent").bind(onUpdate);
 
 script.createEvent("TapEvent").bind(function () {
     if (failed) {
-        // If game failed, any tap will retry
-        print("Retrying game!");
-        resetGame();
+        // If game failed, any tap will retry current flower
+        print("Retrying flower " + currentFlower + "!");
+        // Reset current flower (don't go back to flower 1)
+        isDropping = false;
+        stopped = false;
+        gameOver = false;
+        failed = false;
+        currentAngle = -maxAngle;
+        angleDirection = 1;
+        
+        // Reset flower position
+        resetFlowerPosition();
+        
+        // Hide UI elements
+        initializeUI();
         return;
     }
     
