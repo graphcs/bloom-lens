@@ -160,6 +160,16 @@ function startCelebration() {
     }
     
     print("🎉 Starting celebration dance!");
+    
+    // Show replay button after 5 seconds
+    var replayEvent = script.createEvent("DelayedCallbackEvent");
+    replayEvent.bind(function() {
+        if (script.retryButton) {
+            script.retryButton.enabled = true;
+        }
+        print("Replay button available - tap anywhere to restart!");
+    });
+    replayEvent.reset(5.0); // 5 second delay
 }
 
 // Update celebration dance
@@ -306,7 +316,14 @@ initializeUI();
 script.createEvent("UpdateEvent").bind(onUpdate);
 
 script.createEvent("TapEvent").bind(function () {
-    if (celebrating) return; // Don't allow tapping during celebration
+    if (celebrating) {
+        // During celebration, tap resets the entire game
+        if (script.retryButton && script.retryButton.enabled) {
+            print("Restarting entire game!");
+            resetGame();
+        }
+        return;
+    }
     
     if (failed) {
         // If game failed, any tap will retry current flower
