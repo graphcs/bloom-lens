@@ -1,9 +1,14 @@
 // Flower Drop Script (no tween version)
 // @input SceneObject flower
+// @input Component.Text successText
+// @input Component.Text failText
+// @input Component.Image retryButton
 
 var flowerObj = script.flower;
 var isDropping = false;
 var stopped = false;
+var gameOver = false;
+var failed = false; // Track if the game failed (to show retry option)
 
 // Movement settings
 var dropSpeed = 10;
@@ -17,9 +22,72 @@ var swingSpeed = 0.25; // Speed of the pendulum swing
 var currentAngle = -maxAngle; // Start at left side
 var angleDirection = 1; // 1 for clockwise, -1 for counter-clockwise
 
+// Vase detection settings (middle 1/3 of screen)
+var vaseLeftBound = -50; // Approximate left edge of vase (middle 1/3)
+var vaseRightBound = 50; // Approximate right edge of vase (middle 1/3)
+
+// Initialize UI elements as hidden
+function initializeUI() {
+    if (script.successText) script.successText.enabled = false;
+    if (script.failText) script.failText.enabled = false;
+    if (script.retryButton) script.retryButton.enabled = false;
+}
+
+// Reset game to initial state
+function resetGame() {
+    isDropping = false;
+    stopped = false;
+    gameOver = false;
+    failed = false;
+    currentAngle = -maxAngle;
+    angleDirection = 1;
+    
+    // Reset flower position
+    var pos = flowerObj.getTransform().getLocalPosition();
+    var angleRad = currentAngle * (Math.PI / 180);
+    pos.x = Math.sin(angleRad) * armLength;
+    pos.y = pivotY + Math.cos(angleRad) * armLength;
+    flowerObj.getTransform().setLocalPosition(pos);
+    
+    // Reset rotation
+    var rotation = flowerObj.getTransform().getLocalRotation();
+    rotation.z = -angleRad;
+    flowerObj.getTransform().setLocalRotation(rotation);
+    
+    // Hide UI elements
+    initializeUI();
+}
+
+// Check if flower landed in vase
+function checkLanding(flowerX) {
+    return flowerX >= vaseLeftBound && flowerX <= vaseRightBound;
+}
+
+// Show success feedback
+function showSuccess() {
+    if (script.successText) {
+        script.successText.text = "Yayy~";
+        script.successText.enabled = true;
+    }
+    print("🌸 Success! Flower landed in vase!");
+}
+
+// Show failure feedback
+function showFailure() {
+    failed = true;
+    if (script.failText) {
+        script.failText.text = "Oops :(";
+        script.failText.enabled = true;
+    }
+    if (script.retryButton) {
+        script.retryButton.enabled = true;
+    }
+    print("💔 Missed the vase! Tap anywhere to retry.");
+}
+
 function onUpdate(eventData) {
     if (!flowerObj) return;
-    if (stopped) return;
+    if (stopped || gameOver) return;
     var pos = flowerObj.getTransform().getLocalPosition();
 
     if (!isDropping) {
@@ -54,19 +122,35 @@ function onUpdate(eventData) {
             pos.y = groundY;
             isDropping = false;
             stopped = true;
-        
-            print("🌸 Flower landed!");
-            // TODO: add success animation or reset
+            gameOver = true;
+            
+            // Check if flower landed in vase
+            if (checkLanding(pos.x)) {
+                showSuccess();
+            } else {
+                showFailure();
+            }
         }
     }
-    print("Moving flower");
-
+    
     flowerObj.getTransform().setLocalPosition(pos);
 }
 
+// Initialize the game
+initializeUI();
+ 
 script.createEvent("UpdateEvent").bind(onUpdate);
 
 script.createEvent("TapEvent").bind(function () {
+    if (failed) {
+        // If game failed, any tap will retry
+        print("Retrying game!");
+        resetGame();
+        return;
+    }
+    
+    if (gameOver) return; // Prevent tapping when game is over (success case)
+    
     print("Tapped!");
     isDropping = true;
     print("Starting drop");
