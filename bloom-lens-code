@@ -13,12 +13,13 @@ var isDropping = false;
 var stopped = false;
 var gameOver = false;
 var failed = false; // Track if the game failed (to show retry option)
+var celebrating = false; // Track if we're in celebration mode
 
 // Game progression
 var currentFlower = 1; // Current flower number (1-4)
 var totalFlowers = 4; // Total number of flowers
-var baseSwingSpeed = 0.25; // Base swing speed
-var speedIncrement = 0.15; // Speed increase per flower
+var baseSwingSpeed = 0.2; // Base swing speed (increased from 0.15)
+var speedIncrement = 0.05; // Speed increase per flower
 
 // Movement settings
 var dropSpeed = 10;
@@ -36,18 +37,22 @@ var angleDirection = 1; // 1 for clockwise, -1 for counter-clockwise
 var vaseLeftBound = -50; // Approximate left edge of vase (middle 1/3)
 var vaseRightBound = 50; // Approximate right edge of vase (middle 1/3)
 
-// Set current flower object and hide others
+// Celebration dance settings
+var celebrationFlowers = []; // Flowers that are dancing
+var danceTime = 0; // Time counter for dance animation
+
+// Set current flower object and hide others (except landed ones)
 function setCurrentFlower() {
     currentFlowerObj = flowerObjects[currentFlower - 1];
     
-    // Hide all flowers first
-    for (var i = 0; i < flowerObjects.length; i++) {
+    // Hide only the non-landed flowers
+    for (var i = currentFlower; i < flowerObjects.length; i++) {
         if (flowerObjects[i]) {
             flowerObjects[i].enabled = false;
         }
     }
     
-    // Show only the current flower
+    // Show the current flower
     if (currentFlowerObj) {
         currentFlowerObj.enabled = true;
     }
@@ -90,9 +95,19 @@ function resetGame() {
     stopped = false;
     gameOver = false;
     failed = false;
+    celebrating = false;
     currentFlower = 1; // Reset to first flower
     currentAngle = -maxAngle;
     angleDirection = 1;
+    celebrationFlowers = [];
+    danceTime = 0;
+    
+    // Hide all flowers first
+    for (var i = 0; i < flowerObjects.length; i++) {
+        if (flowerObjects[i]) {
+            flowerObjects[i].enabled = false;
+        }
+    }
     
     // Set first flower and update speed
     setCurrentFlower();
@@ -125,6 +140,56 @@ function nextFlower() {
     print("Starting flower " + currentFlower + " of " + totalFlowers);
 }
 
+// Start celebration dance
+function startCelebration() {
+    celebrating = true;
+    danceTime = 0;
+    
+    // Make all flowers visible for the dance
+    celebrationFlowers = [];
+    for (var i = 0; i < flowerObjects.length; i++) {
+        if (flowerObjects[i]) {
+            flowerObjects[i].enabled = true;
+            celebrationFlowers.push({
+                flower: flowerObjects[i],
+                angle: i * 90, // Start at different angles
+                radius: 80,
+                speed: 2 + i * 0.5 // Different speeds for each flower
+            });
+        }
+    }
+    
+    print("🎉 Starting celebration dance!");
+}
+
+// Update celebration dance
+function updateCelebration() {
+    if (!celebrating) return;
+    
+    danceTime += 0.05; // Increment dance time
+    
+    for (var i = 0; i < celebrationFlowers.length; i++) {
+        var flowerData = celebrationFlowers[i];
+        var flower = flowerData.flower;
+        
+        // Calculate dancing position in a circle
+        var angle = flowerData.angle + danceTime * flowerData.speed;
+        var x = Math.sin(angle) * flowerData.radius;
+        var y = Math.cos(angle) * flowerData.radius + 50; // Center around y=50
+        
+        // Set position
+        var pos = flower.getTransform().getLocalPosition();
+        pos.x = x;
+        pos.y = y;
+        flower.getTransform().setLocalPosition(pos);
+        
+        // Keep flowers upright (no rotation during dance)
+        var rotation = flower.getTransform().getLocalRotation();
+        rotation.z = 0; // Keep upright
+        flower.getTransform().setLocalRotation(rotation);
+    }
+}
+
 // Check if flower landed in vase
 function checkLanding(flowerX) {
     return flowerX >= vaseLeftBound && flowerX <= vaseRightBound;
@@ -134,7 +199,7 @@ function checkLanding(flowerX) {
 function showSuccess() {
     if (script.successText) {
         if (currentFlower < totalFlowers) {
-            script.successText.text = "Yayy~ (" + currentFlower + "/" + totalFlowers + ")";
+            script.successText.text = "Yayy~";
         } else {
             script.successText.text = "All Done! 🌸🌸🌸🌸";
         }
@@ -152,6 +217,13 @@ function showSuccess() {
             nextFlower();
         });
         delayedEvent.reset(2.0); // 2 second delay
+    } else {
+        // All flowers completed - start celebration after 2 seconds
+        var celebrationEvent = script.createEvent("DelayedCallbackEvent");
+        celebrationEvent.bind(function() {
+            startCelebration();
+        });
+        celebrationEvent.reset(2.0);
     }
 }
 
@@ -159,7 +231,7 @@ function showSuccess() {
 function showFailure() {
     failed = true;
     if (script.failText) {
-        script.failText.text = "Oops :( (" + currentFlower + "/" + totalFlowers + ")";
+        script.failText.text = "Oops :(";
         script.failText.enabled = true;
     }
     if (script.retryButton) {
@@ -169,6 +241,12 @@ function showFailure() {
 }
 
 function onUpdate(eventData) {
+    // Handle celebration dance
+    if (celebrating) {
+        updateCelebration();
+        return;
+    }
+    
     if (!currentFlowerObj) return;
     if (stopped || gameOver) return;
     var pos = currentFlowerObj.getTransform().getLocalPosition();
@@ -209,6 +287,7 @@ function onUpdate(eventData) {
             
             // Check if flower landed in vase
             if (checkLanding(pos.x)) {
+                // Keep the flower in the vase (don't hide it)
                 showSuccess();
             } else {
                 showFailure();
@@ -227,6 +306,8 @@ initializeUI();
 script.createEvent("UpdateEvent").bind(onUpdate);
 
 script.createEvent("TapEvent").bind(function () {
+    if (celebrating) return; // Don't allow tapping during celebration
+    
     if (failed) {
         // If game failed, any tap will retry current flower
         print("Retrying flower " + currentFlower + "!");
