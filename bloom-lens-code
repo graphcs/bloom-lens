@@ -9,9 +9,6 @@
 // @input Component.Text tapInstructionText
 // @input Component.Image endingScreen
 
-// Simple debug toggle for ending screen
-var endingScreenVisible = false;
-
 var flowerObjects = [script.flower1, script.flower2, script.flower3, script.flower4];
 var currentFlowerObj = null;
 var isDropping = false;
@@ -77,13 +74,12 @@ function initializeUI() {
     if (script.endingScreen) {
         var endingScreenParent = script.endingScreen.getSceneObject();
         endingScreenParent.enabled = false;
-        endingScreenVisible = false;
         print("DEBUG: Ending screen parent SceneObject initialized as hidden");
     }
     
     // Show tap instruction at the beginning
     if (script.tapInstructionText && !gameStarted) {
-        script.tapInstructionText.text = "Tap to toggle ending screen!";
+        script.tapInstructionText.text = "Tap!";
         script.tapInstructionText.enabled = true;
     }
 }
@@ -168,8 +164,6 @@ function startCelebration() {
     celebrating = true;
     danceTime = 0;
     
-    print("DEBUG: Starting celebration - ending screen enabled status: " + (script.endingScreen ? script.endingScreen.enabled : "null"));
-    
     // Make all flowers visible for the dance
     celebrationFlowers = [];
     for (var i = 0; i < flowerObjects.length; i++) {
@@ -186,13 +180,12 @@ function startCelebration() {
     
     print("🎉 Starting celebration dance!");
     
-    // Show replay button after 5 seconds
+    // Show replay button after 3 seconds
     var replayEvent = script.createEvent("DelayedCallbackEvent");
     replayEvent.bind(function() {
         if (script.retryButton) {
             script.retryButton.enabled = true;
         }
-        print("DEBUG: Replay button enabled - ending screen enabled status: " + (script.endingScreen ? script.endingScreen.enabled : "null"));
         print("Replay button available - tap anywhere to restart!");
     });
     replayEvent.reset(3.0); // 3 second delay
@@ -259,13 +252,11 @@ function showSuccess() {
         endingEvent.bind(function() {
             // Hide success message
             if (script.successText) script.successText.enabled = false;
-            // Show ending screen
-            print("DEBUG: About to show ending screen");
+            // Show ending screen using the working method
             if (script.endingScreen) {
-                script.endingScreen.enabled = true;
-                print("DEBUG: Ending screen parent object enabled successfully");
-            } else {
-                print("DEBUG: ERROR - script.endingScreen is null/undefined");
+                var endingScreenParent = script.endingScreen.getSceneObject();
+                endingScreenParent.enabled = true;
+                print("DEBUG: Ending screen shown successfully");
             }
             // Start celebration dance
             startCelebration();
@@ -288,8 +279,68 @@ function showFailure() {
 }
 
 function onUpdate(eventData) {
-    // Simple debug mode - just return early, no game logic
-    return;
+    // Handle celebration dance
+    if (celebrating) {
+        updateCelebration();
+        return;
+    }
+    
+    if (!currentFlowerObj) return;
+    if (stopped || gameOver) return;
+    var pos = currentFlowerObj.getTransform().getLocalPosition();
+
+    if (!isDropping) {
+        // Update pendulum angle
+        currentAngle += angleDirection * swingSpeed;
+        
+        // Reverse direction when hitting the limits
+        if (currentAngle >= maxAngle || currentAngle <= -maxAngle) {
+            angleDirection *= -1;
+        }
+        
+        // Convert angle to radians
+        var angleRad = currentAngle * (Math.PI / 180);
+        
+        // Calculate position based on pendulum motion
+        // Pivot is below the flower, so flower rotates around lower point
+        // x = sin(angle) * armLength
+        // y = pivotY + cos(angle) * armLength
+        pos.x = Math.sin(angleRad) * armLength;
+        pos.y = pivotY + Math.cos(angleRad) * armLength;
+        
+        // Also rotate the flower object to match the pendulum angle
+        var transform = currentFlowerObj.getTransform();
+        var rotation = transform.getLocalRotation();
+        rotation.z = -angleRad; // Negative to match the visual rotation
+        transform.setLocalRotation(rotation);
+    } else {
+        // Drop vertically
+        pos.y -= dropSpeed;
+
+        // Check if flower is in vase area during drop
+        var inVaseArea = checkLanding(pos.x);
+        
+        if (inVaseArea && pos.y <= groundY) {
+            // Success: flower lands in vase (goes all the way down)
+            pos.y = groundY;
+            isDropping = false;
+            stopped = true;
+            gameOver = true;
+            
+            // Keep the flower in the vase (don't hide it)
+            showSuccess();
+        } else if (!inVaseArea && pos.y <= vaseRimY) {
+            // Failure: flower hits vase rim/edge (stops higher)
+            pos.y = vaseRimY;
+            isDropping = false;
+            stopped = true;
+            gameOver = true;
+            
+            showFailure();
+        }
+    }
+    
+    currentFlowerObj.getTransform().setLocalPosition(pos);
 }
 
 // Initialize the game
@@ -300,17 +351,43 @@ initializeUI();
 script.createEvent("UpdateEvent").bind(onUpdate);
 
 script.createEvent("TapEvent").bind(function () {
-    // Simple debug toggle for ending screen
-    if (script.endingScreen) {
-        endingScreenVisible = !endingScreenVisible;
-        var endingScreenParent = script.endingScreen.getSceneObject();
-        endingScreenParent.enabled = endingScreenVisible;
-        print("DEBUG: Ending screen parent SceneObject toggled to: " + endingScreenVisible);
-        
-        if (script.tapInstructionText) {
-            script.tapInstructionText.text = endingScreenVisible ? "Ending screen ON" : "Ending screen OFF";
-        }
-    } else {
-        print("DEBUG: script.endingScreen Component.Image is null/undefined");
+    // Hide tap instruction on first tap
+    if (!gameStarted && script.tapInstructionText) {
+        script.tapInstructionText.enabled = false;
+        gameStarted = true;
     }
+    
+    if (celebrating) {
+        // During celebration, tap resets the entire game
+        if (script.retryButton && script.retryButton.enabled) {
+            print("Restarting entire game!");
+            resetGame();
+        }
+        return;
+    }
+    
+    if (failed) {
+        // If game failed, any tap will retry current flower
+        print("Retrying flower " + currentFlower + "!");
+        // Reset current flower (don't go back to flower 1)
+        isDropping = false;
+        stopped = false;
+        gameOver = false;
+        failed = false;
+        currentAngle = -maxAngle;
+        angleDirection = 1;
+        
+        // Reset flower position
+        resetFlowerPosition();
+        
+        // Hide UI elements
+        initializeUI();
+        return;
+    }
+    
+    if (gameOver) return; // Prevent tapping when game is over (success case)
+    
+    print("Tapped!");
+    isDropping = true;
+    print("Starting drop");
 });
