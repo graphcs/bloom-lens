@@ -169,7 +169,7 @@ function startCelebration() {
         }
         print("Replay button available - tap anywhere to restart!");
     });
-    replayEvent.reset(5.0); // 5 second delay
+    replayEvent.reset(3.0); // 3 second delay
 }
 
 // Update celebration dance
