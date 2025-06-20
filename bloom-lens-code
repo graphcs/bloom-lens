@@ -1,0 +1,73 @@
+// Flower Drop Script (no tween version)
+// @input SceneObject flower
+
+var flowerObj = script.flower;
+var isDropping = false;
+var stopped = false;
+
+// Movement settings
+var dropSpeed = 10;
+var groundY = -200;
+
+// Pendulum settings
+var pivotY = -1500; // Y position of the pivot point (much further down, ~2.7x lower than -150)
+var armLength = 1480; // Distance from pivot to flower center (increased to compensate for much lower pivot)
+var maxAngle = 5 // Maximum swing angle in degrees (reduced from 15 to 5 for very subtle motion)
+var swingSpeed = 0.25; // Speed of the pendulum swing
+var currentAngle = -maxAngle; // Start at left side
+var angleDirection = 1; // 1 for clockwise, -1 for counter-clockwise
+
+function onUpdate(eventData) {
+    if (!flowerObj) return;
+    if (stopped) return;
+    var pos = flowerObj.getTransform().getLocalPosition();
+
+    if (!isDropping) {
+        // Update pendulum angle
+        currentAngle += angleDirection * swingSpeed;
+        
+        // Reverse direction when hitting the limits
+        if (currentAngle >= maxAngle || currentAngle <= -maxAngle) {
+            angleDirection *= -1;
+        }
+        
+        // Convert angle to radians
+        var angleRad = currentAngle * (Math.PI / 180);
+        
+        // Calculate position based on pendulum motion
+        // Pivot is below the flower, so flower rotates around lower point
+        // x = sin(angle) * armLength
+        // y = pivotY + cos(angle) * armLength
+        pos.x = Math.sin(angleRad) * armLength;
+        pos.y = pivotY + Math.cos(angleRad) * armLength;
+        
+        // Also rotate the flower object to match the pendulum angle
+        var transform = flowerObj.getTransform();
+        var rotation = transform.getLocalRotation();
+        rotation.z = -angleRad; // Negative to match the visual rotation
+        transform.setLocalRotation(rotation);
+    } else {
+        // Drop vertically
+        pos.y -= dropSpeed;
+
+        if (pos.y <= groundY) {
+            pos.y = groundY;
+            isDropping = false;
+            stopped = true;
+        
+            print("🌸 Flower landed!");
+            // TODO: add success animation or reset
+        }
+    }
+    print("Moving flower");
+
+    flowerObj.getTransform().setLocalPosition(pos);
+}
+
+script.createEvent("UpdateEvent").bind(onUpdate);
+
+script.createEvent("TapEvent").bind(function () {
+    print("Tapped!");
+    isDropping = true;
+    print("Starting drop");
+});
