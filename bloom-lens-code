@@ -80,6 +80,31 @@ function initializeUI() {
         print("DEBUG: Ending screen parent SceneObject initialized as hidden");
     }
     
+    // Initialize celebration music as disabled
+    if (script.celebrationMusic) {
+        try {
+            // Try to stop any playing music first
+            if (script.celebrationMusic.isPlaying && script.celebrationMusic.isPlaying()) {
+                script.celebrationMusic.stop();
+                print("Stopped any playing music during initialization");
+            }
+            // Set volume to 0 to ensure it's muted
+            script.celebrationMusic.volume = 0;
+            print("Celebration music initialized as disabled (volume = 0)");
+        } catch (e) {
+            print("Could not fully initialize music state, trying volume only: " + e);
+            // If stop() fails, at least try to mute it
+            try {
+                script.celebrationMusic.volume = 0;
+                print("Music volume set to 0 (stop failed)");
+            } catch (e2) {
+                print("Could not set music volume during initialization: " + e2);
+            }
+        }
+    } else {
+        print("WARNING: script.celebrationMusic is not assigned in the inspector");
+    }
+    
     // Show tap instruction at the beginning
     if (script.tapInstructionText && !gameStarted) {
         script.tapInstructionText.text = "Tap!";
@@ -111,27 +136,23 @@ function resetFlowerPosition() {
 
 // Reset game to initial state
 function resetGame() {
-    // Stop celebration music first - try multiple methods
+    print("=== GAME RESET STARTING ===");
+    
+    // Stop and disable celebration music
     if (script.celebrationMusic) {
         try {
-            // Try method 1: stop()
+            print("Before reset - Music volume: " + script.celebrationMusic.volume + ", isPlaying: " + script.celebrationMusic.isPlaying());
+            
             script.celebrationMusic.stop();
-            print("Music stopped with stop()");
-        } catch (e1) {
-            try {
-                // Try method 2: pause()
-                script.celebrationMusic.pause();
-                print("Music stopped with pause()");
-            } catch (e2) {
-                try {
-                    // Try method 3: set volume to 0
-                    script.celebrationMusic.volume = 0;
-                    print("Music muted with volume = 0");
-                } catch (e3) {
-                    print("Could not stop music - tried stop(), pause(), and volume methods");
-                }
-            }
+            script.celebrationMusic.volume = 0;
+            
+            print("After reset - Music volume: " + script.celebrationMusic.volume + ", isPlaying: " + script.celebrationMusic.isPlaying());
+            print("Music stopped and disabled for game reset");
+        } catch (e) {
+            print("Could not stop music during reset: " + e);
         }
+    } else {
+        print("ERROR: script.celebrationMusic is null during reset!");
     }
     
     isDropping = false;
@@ -190,10 +211,35 @@ function startCelebration() {
     celebrating = true;
     danceTime = 0;
     
-    // Start celebration music
+    // Enable and start celebration music
     if (script.celebrationMusic) {
-        script.celebrationMusic.play(1); // Play once (set to -1 for loop if you want it to repeat)
-        print("Celebration music started!");
+        try {
+            // Check current state
+            print("Music current volume: " + script.celebrationMusic.volume);
+            print("Music isPlaying: " + script.celebrationMusic.isPlaying());
+            
+            // Set volume to 1 to enable the music
+            script.celebrationMusic.volume = 1;
+            print("Music volume set to 1");
+            
+            // Stop any current playback before starting new one
+            if (script.celebrationMusic.isPlaying()) {
+                script.celebrationMusic.stop();
+                print("Stopped currently playing music");
+            }
+            
+            // Play the music
+            script.celebrationMusic.play(1); // Play once
+            print("Celebration music play() called!");
+            
+            // Verify it's playing
+            print("After play() - isPlaying: " + script.celebrationMusic.isPlaying());
+            
+        } catch (e) {
+            print("Could not start celebration music: " + e);
+        }
+    } else {
+        print("ERROR: script.celebrationMusic is null or undefined!");
     }
     
     // Make all flowers visible for the dance
@@ -411,6 +457,19 @@ script.createEvent("TapEvent").bind(function () {
         // Check if replay button is visible and restart game
         if (script.retryButton && script.retryButton.enabled) {
             print("REPLAY BUTTON IS VISIBLE AND ENABLED - RESTARTING GAME!");
+            
+            // Stop celebration music when replay button is clicked
+            if (script.celebrationMusic) {
+                try {
+                    print("Stopping celebration music due to replay button click");
+                    script.celebrationMusic.stop();
+                    script.celebrationMusic.volume = 0;
+                    print("Music stopped and volume set to 0");
+                } catch (e) {
+                    print("Could not stop music during replay: " + e);
+                }
+            }
+            
             resetGame();
             return;
         } else {
