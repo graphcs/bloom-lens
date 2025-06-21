@@ -8,6 +8,9 @@
 // @input Component.Image retryButton
 // @input Component.Text tapInstructionText
 // @input Component.Image endingScreen
+// @input Component.AudioComponent successSound
+// @input Component.AudioComponent failureSound  
+// @input Component.AudioComponent celebrationMusic
 
 var flowerObjects = [script.flower1, script.flower2, script.flower3, script.flower4];
 var currentFlowerObj = null;
@@ -108,6 +111,29 @@ function resetFlowerPosition() {
 
 // Reset game to initial state
 function resetGame() {
+    // Stop celebration music first - try multiple methods
+    if (script.celebrationMusic) {
+        try {
+            // Try method 1: stop()
+            script.celebrationMusic.stop();
+            print("Music stopped with stop()");
+        } catch (e1) {
+            try {
+                // Try method 2: pause()
+                script.celebrationMusic.pause();
+                print("Music stopped with pause()");
+            } catch (e2) {
+                try {
+                    // Try method 3: set volume to 0
+                    script.celebrationMusic.volume = 0;
+                    print("Music muted with volume = 0");
+                } catch (e3) {
+                    print("Could not stop music - tried stop(), pause(), and volume methods");
+                }
+            }
+        }
+    }
+    
     isDropping = false;
     stopped = false;
     gameOver = false;
@@ -136,7 +162,7 @@ function resetGame() {
     
     // Hide UI elements (this will show tap instruction)
     initializeUI();
-    print("DEBUG: Game reset completed");
+    print("Game reset completed - back to flower 1");
 }
 
 // Advance to next flower
@@ -164,6 +190,12 @@ function startCelebration() {
     celebrating = true;
     danceTime = 0;
     
+    // Start celebration music
+    if (script.celebrationMusic) {
+        script.celebrationMusic.play(1); // Play once (set to -1 for loop if you want it to repeat)
+        print("Celebration music started!");
+    }
+    
     // Make all flowers visible for the dance
     celebrationFlowers = [];
     for (var i = 0; i < flowerObjects.length; i++) {
@@ -179,16 +211,6 @@ function startCelebration() {
     }
     
     print("🎉 Starting celebration dance!");
-    
-    // Show replay button after 3 seconds
-    var replayEvent = script.createEvent("DelayedCallbackEvent");
-    replayEvent.bind(function() {
-        if (script.retryButton) {
-            script.retryButton.enabled = true;
-        }
-        print("Replay button available - tap anywhere to restart!");
-    });
-    replayEvent.reset(3.0); // 3 second delay
 }
 
 // Update celebration dance
@@ -196,6 +218,16 @@ function updateCelebration() {
     if (!celebrating) return;
     
     danceTime += 0.05; // Increment dance time
+    
+    // Check if ending screen was closed and show replay button
+    if (script.endingScreen && script.retryButton) {
+        var endingScreenParent = script.endingScreen.getSceneObject();
+        if (!endingScreenParent.enabled && !script.retryButton.enabled) {
+            // Ending screen is closed but replay button not yet shown
+            script.retryButton.enabled = true;
+            print("Ending screen closed - replay button now available!");
+        }
+    }
     
     for (var i = 0; i < celebrationFlowers.length; i++) {
         var flowerData = celebrationFlowers[i];
@@ -226,6 +258,12 @@ function checkLanding(flowerX) {
 
 // Show success feedback
 function showSuccess() {
+    // Play success sound
+    if (script.successSound) {
+        script.successSound.play(1);
+        print("Success sound played!");
+    }
+    
     if (script.successText) {
         if (currentFlower < totalFlowers) {
             script.successText.text = "Yayy~";
@@ -268,6 +306,13 @@ function showSuccess() {
 // Show failure feedback
 function showFailure() {
     failed = true;
+    
+    // Play failure sound
+    if (script.failureSound) {
+        script.failureSound.play(1);
+        print("Failure sound played!");
+    }
+    
     if (script.failText) {
         script.failText.text = "Oops :(";
         script.failText.enabled = true;
@@ -351,18 +396,29 @@ initializeUI();
 script.createEvent("UpdateEvent").bind(onUpdate);
 
 script.createEvent("TapEvent").bind(function () {
+    print("TAP DETECTED - checking game state");
+    
     // Hide tap instruction on first tap
     if (!gameStarted && script.tapInstructionText) {
         script.tapInstructionText.enabled = false;
         gameStarted = true;
+        print("Game started!");
     }
     
     if (celebrating) {
-        // During celebration, tap resets the entire game
+        print("In celebration mode");
+        
+        // Check if replay button is visible and restart game
         if (script.retryButton && script.retryButton.enabled) {
-            print("Restarting entire game!");
+            print("REPLAY BUTTON IS VISIBLE AND ENABLED - RESTARTING GAME!");
             resetGame();
+            return;
+        } else {
+            print("Replay button not ready - retryButton exists: " + (script.retryButton ? "yes" : "no") + ", enabled: " + (script.retryButton ? script.retryButton.enabled : "N/A"));
         }
+        
+        // During celebration, ignore other taps (ending screen has its own close button)
+        print("Celebration mode - ignoring tap");
         return;
     }
     
@@ -385,9 +441,11 @@ script.createEvent("TapEvent").bind(function () {
         return;
     }
     
-    if (gameOver) return; // Prevent tapping when game is over (success case)
+    if (gameOver) {
+        print("Game over - ignoring tap");
+        return; // Prevent tapping when game is over (success case)
+    }
     
-    print("Tapped!");
+    print("Normal gameplay tap - dropping flower");
     isDropping = true;
-    print("Starting drop");
 });
